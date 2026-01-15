@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: commandlayer-postgres
+    environment:
+      POSTGRES_USER: commandlayer
+      POSTGRES_PASSWORD: commandlayer
+      POSTGRES_DB: commandlayer
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: commandlayer-backend
+    volumes:
+      - ./backend:/app
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: commandlayer
+      DB_PASSWORD: commandlayer
+      DB_NAME: commandlayer
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
