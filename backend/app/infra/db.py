@@ -1,11 +1,8 @@
+# app/infra/db.py
 from sqlalchemy import create_engine, text
 from app.infra.settings import settings
 
-engine = create_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-)
-
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 
 def ping_db() -> bool:
     try:
