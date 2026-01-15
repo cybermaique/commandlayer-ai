@@ -1,4 +1,6 @@
 from datetime import datetime
+import uuid
+
 from sqlalchemy import String, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,7 +13,12 @@ class AssignmentModel(Base):
         UniqueConstraint("asset_id", "task_id", name="uq_assignment_asset_task"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
     asset_id: Mapped[str] = mapped_column(String(36), ForeignKey("assets.id"), nullable=False)
     task_id: Mapped[str] = mapped_column(String(36), ForeignKey("tasks.id"), nullable=False)
     assigned_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
