@@ -1,4 +1,5 @@
 import uuid
+from typing import Any, Dict, Optional, Tuple
 
 
 class CommandValidator:
@@ -54,6 +55,36 @@ class CommandValidator:
                 uuid.UUID(asset_id)
                 uuid.UUID(task_id)
             except ValueError as exc:
-                raise ValueError(
-                    "asset_id and task_id must be valid UUIDs"
-                ) from exc
+                raise ValueError("asset_id and task_id must be valid UUIDs") from exc
+
+    @staticmethod
+    def validate_action_and_payload(
+        action: Optional[str],
+        payload: Optional[Dict[str, Any]],
+    ) -> Tuple[str, Dict[str, Any]]:
+        """
+        Normalize + validate (action, payload) after intent resolution.
+
+        Returns:
+          (action, payload) validated and normalized.
+        Raises:
+          ValueError if invalid.
+        """
+        if not action or not isinstance(action, str) or not action.strip():
+            raise ValueError("action is required")
+
+        normalized_payload: Dict[str, Any] = payload or {}
+        if not isinstance(normalized_payload, dict):
+            raise ValueError("Payload must be an object")
+
+        # Reuse existing validation rules
+        CommandValidator.validate_action_payload(action, normalized_payload)
+
+        # Optional: normalize payload shape (ensures only required keys)
+        if action == "assign_task":
+            normalized_payload = {
+                "asset_id": normalized_payload.get("asset_id"),
+                "task_id": normalized_payload.get("task_id"),
+            }
+
+        return action, normalized_payload

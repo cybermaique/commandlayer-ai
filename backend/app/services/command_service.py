@@ -29,13 +29,39 @@ class CommandService:
         payload = command.payload or {}
         used_raw_text = False
         resolution = None
+        rag = None
 
         if not action and command.raw_text:
             try:
-                resolution = IntentResolver.resolve(
+                resolution_result = IntentResolver.resolve(
                     raw_text=command.raw_text,
                     fallback_payload=payload,
                 )
+                resolution = resolution_result.intent
+                rag = resolution_result.rag
+                used_raw_text = True
+
+                # IMPORTANT: apply resolved intent to the execution variables
+                action = resolution.action
+                payload = resolution.payload or {}
+
+                # Friendly, deterministic error for the most common LLM failure mode
+                if resolution.error == "missing_fields":
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error_code": "missing_fields",
+                            "message": (
+                                "Unable to resolve asset_id and task_id. "
+                                "Enable RAG or provide explicit IDs."
+                            ),
+                            "rag": {
+                                "enabled": rag.enabled if rag else False,
+                                "sources": rag.sources if rag else [],
+                            },
+                        },
+                    )
+
             except RuntimeError as exc:
                 if "OPENAI_API_KEY" in str(exc):
                     raise HTTPException(
@@ -45,6 +71,7 @@ class CommandService:
                             "message": str(exc),
                         },
                     ) from exc
+
                 raise HTTPException(
                     status_code=503,
                     detail={
@@ -52,6 +79,7 @@ class CommandService:
                         "message": str(exc),
                     },
                 ) from exc
+
             except httpx.TimeoutException as exc:
                 raise HTTPException(
                     status_code=504,
@@ -60,48 +88,21 @@ class CommandService:
                         "message": "LLM provider timeout",
                     },
                 ) from exc
+
             except httpx.HTTPStatusError as exc:
-                status_code = exc.response.status_code
-                if status_code == 429:
-                    raise HTTPException(
-                        status_code=429,
-                        detail={
-                            "error_code": "provider_rate_limited",
-                            "message": "LLM provider rate limit",
-                        },
-                    ) from exc
                 raise HTTPException(
                     status_code=503,
                     detail={
-                        "error_code": "provider_error",
-                        "message": "LLM provider error",
+                        "error_code": "provider_http_error",
+                        "message": str(exc),
                     },
                 ) from exc
-            except httpx.HTTPError as exc:
-                raise HTTPException(
-                    status_code=503,
-                    detail={
-                        "error_code": "provider_error",
-                        "message": "LLM provider error",
-                    },
-                ) from exc
-
-            if not resolution or resolution.error or not resolution.action:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error_code": "intent_resolution_failed",
-                        "error": resolution.error if resolution else "intent_resolution_failed",
-                        "raw_text": command.raw_text,
-                    },
-                )
-
-            action = resolution.action
-            payload = resolution.payload or {}
-            used_raw_text = True
 
         try:
-            CommandValidator.validate_action_payload(action, payload)
+            action, payload = CommandValidator.validate_action_and_payload(
+                action=action,
+                payload=payload,
+            )
         except ValueError as exc:
             raise HTTPException(
                 status_code=422,
@@ -129,6 +130,13 @@ class CommandService:
 
             if resolution and resolution.raw_output:
                 resolution_metadata["raw_output"] = resolution.raw_output
+
+            if used_raw_text and rag:
+                resolution_metadata["rag"] = {
+                    "enabled": rag.enabled,
+                    "sources": rag.sources,
+                    "context_chars": len(rag.context_text),
+                }
 
             log = CommandLogModel(
                 raw_text=command.raw_text if used_raw_text else action,

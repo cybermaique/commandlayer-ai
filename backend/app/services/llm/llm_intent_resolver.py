@@ -22,7 +22,8 @@ Supported actions:
 
 Rules:
 - If missing required fields, set action=null, payload=null, confidence=0, error="missing_fields"
-- Never invent ids. Extract only from user text.
+- Never invent ids. Extract only from user input or provided context.
+- Use CONTEXT only as reference. Do not invent IDs. Output JSON only.
 """.strip()
 
 
@@ -30,8 +31,12 @@ class LLMIntentResolver:
     def __init__(self) -> None:
         self.client = OpenAIClient()
 
-    def resolve(self, raw_text: str) -> ResolvedIntent:
-        content = self.client.chat(SYSTEM_PROMPT, raw_text)
+    def resolve(self, raw_text: str, context: str = "") -> ResolvedIntent:
+        user_content = raw_text
+        if context:
+            user_content = f"CONTEXT:\n{context}\n\nUSER_INPUT:\n{raw_text}"
+
+        content = self.client.chat(SYSTEM_PROMPT, user_content)
 
         try:
             data = json.loads(content)
