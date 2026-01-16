@@ -8,6 +8,10 @@ class Settings(BaseModel):
     db_user: str = os.getenv("DB_USER", "commandlayer")
     db_password: str = os.getenv("DB_PASSWORD", "commandlayer")
     db_name: str = os.getenv("DB_NAME", "commandlayer")
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    openai_timeout_seconds: int = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "20"))
+    intent_resolution_mode: str = os.getenv("INTENT_RESOLUTION_MODE", "pre_ai")
 
     @property
     def database_url(self) -> str:
