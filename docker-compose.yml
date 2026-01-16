@@ -16,12 +16,15 @@ services:
     container_name: commandlayer-backend
     volumes:
       - ./backend:/app
+    env_file:
+      - ./backend/.env
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: commandlayer
       DB_PASSWORD: commandlayer
       DB_NAME: commandlayer
+      KNOWLEDGE_BASE_PATH: /app/knowledge_base
     depends_on:
       - postgres
     ports:
