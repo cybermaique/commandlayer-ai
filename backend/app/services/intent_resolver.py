@@ -2,8 +2,9 @@ import re
 from typing import Any, Dict, Optional
 
 from app.infra.settings import settings
-from app.services.intent_types import ResolvedIntent
+from app.services.intent_types import ResolvedIntent, ResolvedIntentResult
 from app.services.llm.llm_intent_resolver import LLMIntentResolver
+from app.services.rag.retriever import RagContext, Retriever
 
 UUID_PATTERN = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 
@@ -30,44 +31,37 @@ class PreAIIntentResolver:
         payload: Dict[str, Any] = {}
         fallback_payload = fallback_payload or {}
 
-        if not raw_text or not raw_text.strip():
-            return ResolvedIntent(
-                action=None,
-                payload=None,
-                confidence=0.0,
-                provider="pre_ai",
-                model="regex",
-                error="raw_text_required",
-            )
-
-        asset_match = ASSET_ID_REGEX.search(raw_text)
-        task_match = TASK_ID_REGEX.search(raw_text)
-
-        asset_id = asset_match.group("asset_id") if asset_match else None
-        task_id = task_match.group("task_id") if task_match else None
-
+        used_fallback = False
         used_weak_match = False
 
-        if not asset_id or not task_id:
-            assign_match = ASSIGN_TASK_REGEX.search(raw_text)
-            if assign_match:
-                asset_id = asset_id or assign_match.group("asset_id")
-                task_id = task_id or assign_match.group("task_id")
-                used_weak_match = True
+        asset_id = None
+        task_id = None
 
-        used_fallback = False
-        if not asset_id and fallback_payload.get("asset_id"):
+        assign_match = ASSIGN_TASK_REGEX.search(raw_text)
+        if assign_match:
+            asset_id = assign_match.group("asset_id")
+            task_id = assign_match.group("task_id")
+        else:
+            asset_match = ASSET_ID_REGEX.search(raw_text)
+            task_match = TASK_ID_REGEX.search(raw_text)
+
+            if asset_match:
+                asset_id = asset_match.group("asset_id")
+            if task_match:
+                task_id = task_match.group("task_id")
+
+        if not asset_id and "asset_id" in fallback_payload:
             asset_id = fallback_payload.get("asset_id")
             used_fallback = True
 
-        if not task_id and fallback_payload.get("task_id"):
+        if not task_id and "task_id" in fallback_payload:
             task_id = fallback_payload.get("task_id")
             used_fallback = True
 
         if not asset_id or not task_id:
             return ResolvedIntent(
                 action=None,
-                payload=None,
+                payload={},
                 confidence=0.0,
                 provider="pre_ai",
                 model="regex",
@@ -95,22 +89,36 @@ class IntentResolver:
     def resolve(
         raw_text: str,
         fallback_payload: Optional[Dict[str, Any]] = None,
-    ) -> ResolvedIntent:
+    ) -> ResolvedIntentResult:
         mode = settings.intent_resolution_mode
+        empty_rag = RagContext(enabled=False, sources=[], context_text="")
 
         if mode == "llm":
-            return LLMIntentResolver().resolve(raw_text)
+            rag = Retriever.get_context(raw_text)
+            intent = LLMIntentResolver().resolve(
+                raw_text,
+                context=rag.context_text,
+            )
+            return ResolvedIntentResult(intent=intent, rag=rag)
 
         if mode == "hybrid":
             pre = PreAIIntentResolver.resolve(
                 raw_text,
                 fallback_payload=fallback_payload,
             )
-            if pre.error:
-                return LLMIntentResolver().resolve(raw_text)
-            return pre
 
-        return PreAIIntentResolver.resolve(
+            if pre.error:
+                rag = Retriever.get_context(raw_text)
+                intent = LLMIntentResolver().resolve(
+                    raw_text,
+                    context=rag.context_text,
+                )
+                return ResolvedIntentResult(intent=intent, rag=rag)
+
+            return ResolvedIntentResult(intent=pre, rag=empty_rag)
+
+        pre = PreAIIntentResolver.resolve(
             raw_text,
             fallback_payload=fallback_payload,
         )
+        return ResolvedIntentResult(intent=pre, rag=empty_rag)
