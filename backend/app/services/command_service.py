@@ -132,11 +132,18 @@ class CommandService:
                 resolution_metadata["raw_output"] = resolution.raw_output
 
             if used_raw_text and rag:
-                resolution_metadata["rag"] = {
+                rag_metadata = {
                     "enabled": rag.enabled,
                     "sources": rag.sources,
                     "context_chars": len(rag.context_text),
                 }
+                if rag.mode:
+                    rag_metadata["mode"] = rag.mode
+                if rag.top_k is not None:
+                    rag_metadata["top_k"] = rag.top_k
+                if rag.retrieved_chunks is not None:
+                    rag_metadata["retrieved_chunks"] = rag.retrieved_chunks
+                resolution_metadata["rag"] = rag_metadata
 
             log = CommandLogModel(
                 raw_text=command.raw_text if used_raw_text else action,
