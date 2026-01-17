@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 
-from sqlalchemy import String, DateTime, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infra.models.base import Base
@@ -19,4 +19,13 @@ class CommandLogModel(Base):
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     intent_json: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    api_key_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("api_keys.id"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+    )

@@ -34,6 +34,11 @@ class Settings(BaseModel):
     )
     kb_chunk_size: int = int(os.getenv("KB_CHUNK_SIZE", "800"))
     kb_chunk_overlap: int = int(os.getenv("KB_CHUNK_OVERLAP", "120"))
+    
+      # Auth
+    auth_mode: str = os.getenv("AUTH_MODE", "off")
+    auth_header_name: str = os.getenv("AUTH_HEADER_NAME", "X-API-Key")
+    rate_limit_per_minute: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
 
     @property
     def database_url(self) -> str:
