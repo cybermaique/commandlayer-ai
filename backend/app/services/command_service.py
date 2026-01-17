@@ -4,6 +4,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.api.schemas.command import CommandRequest
+from app.domain.types.auth import AuthContext
 from app.infra.models.command_log_model import CommandLogModel
 from app.infra.session import get_session
 from app.infra.settings import settings
@@ -13,7 +14,11 @@ from app.services.intent_resolver import IntentResolver
 
 
 class CommandService:
-    def execute(self, command: CommandRequest):
+    def execute(
+        self,
+        command: CommandRequest,
+        auth_context: AuthContext | None = None,
+    ):
         try:
             CommandValidator.validate_request(command)
         except ValueError as exc:
@@ -24,6 +29,15 @@ class CommandService:
                     "message": str(exc),
                 },
             ) from exc
+
+        if settings.auth_mode == "api_key" and not auth_context:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "error_code": "unauthorized",
+                    "message": "Missing or invalid API key.",
+                },
+            )
 
         action = command.action
         payload = command.payload or {}
@@ -51,41 +65,17 @@ class CommandService:
                         status_code=422,
                         detail={
                             "error_code": "missing_fields",
-                            "message": (
-                                "Unable to resolve asset_id and task_id. "
-                                "Enable RAG or provide explicit IDs."
-                            ),
-                            "rag": {
-                                "enabled": rag.enabled if rag else False,
-                                "sources": rag.sources if rag else [],
-                            },
+                            "message": "Some required fields are missing in the request.",
+                            "missing_fields": resolution.missing_fields,
                         },
                     )
-
-            except RuntimeError as exc:
-                if "OPENAI_API_KEY" in str(exc):
-                    raise HTTPException(
-                        status_code=503,
-                        detail={
-                            "error_code": "provider_unavailable",
-                            "message": str(exc),
-                        },
-                    ) from exc
-
-                raise HTTPException(
-                    status_code=503,
-                    detail={
-                        "error_code": "provider_error",
-                        "message": str(exc),
-                    },
-                ) from exc
 
             except httpx.TimeoutException as exc:
                 raise HTTPException(
                     status_code=504,
                     detail={
                         "error_code": "provider_timeout",
-                        "message": "LLM provider timeout",
+                        "message": str(exc),
                     },
                 ) from exc
 
@@ -111,6 +101,20 @@ class CommandService:
                     "message": str(exc),
                 },
             ) from exc
+
+        if (
+            settings.auth_mode == "api_key"
+            and action == "assign_task"
+            and auth_context
+            and auth_context.role not in {"admin", "runner"}
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error_code": "forbidden",
+                    "message": "API key does not have permission for this action.",
+                },
+            )
 
         with get_session() as session:
             result = CommandExecutor.execute(
@@ -145,6 +149,13 @@ class CommandService:
                     rag_metadata["retrieved_chunks"] = rag.retrieved_chunks
                 resolution_metadata["rag"] = rag_metadata
 
+            if settings.auth_mode == "api_key" and auth_context:
+                resolution_metadata["auth"] = {
+                    "mode": "api_key",
+                    "api_key_name": auth_context.name,
+                    "role": auth_context.role,
+                }
+
             log = CommandLogModel(
                 raw_text=command.raw_text if used_raw_text else action,
                 intent_json=json.dumps(
@@ -156,6 +167,7 @@ class CommandService:
                     ensure_ascii=False,
                 ),
                 status=status,
+                api_key_id=auth_context.api_key_id if auth_context else None,
             )
 
             session.add(log)
